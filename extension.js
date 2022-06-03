@@ -31,7 +31,7 @@ const Atk           = imports.gi.Atk;
 const Lang          = imports.lang;
 
 /* let xdg-open pick the appropriate program to open/execute the file */
-const DEFAULT_EXEC = 'xdg-open';
+const DEFAULT_EXEC = 'open';
 /* Limit search results, since number of displayed items is limited */
 const MAX_RESULTS = 10;
 const ICON_SIZE = 64;
@@ -47,20 +47,23 @@ var trackerSearchProviderFolders = null;
 
 
 const TrackerSearchProvider = new Lang.Class({
+// const TrackerSearchProvider = class TrackerSearchProvider{
     Name : 'TrackerSearchProvider',
 
     _init : function(title, categoryType) {
         this._categoryType = categoryType;
         this._title = title;
-        this.id = 'tracker-search-' + title;
-        this.appInfo = {get_name : function() {return 'tracker-needle';},
-                        get_icon : function() {return Gio.icon_new_for_string("/usr/share/icons/gnome/256x256/actions/system-search.png");},
-                        get_id : function() {return this.id;}
-        };
+        this.id = 'tracker3 search ' + title;
+        // this.appInfo = {get_name : function() {return 'tracker3 --help';},
+        //                 get_icon : function() {return Gio.icon_new_for_string("/usr/share/icons/gnome/256x256/actions/system-search.png");},
+        //                 get_id : function() {return this.id;}
+        // };
         this.resultsMap = new Map();
     },
 
-    _getQuery : function (terms, filetype) {
+
+    _getQuery : function(terms, filetype) {
+        // global.log("QUERY");
         var query = "";
 
         if (this._categoryType == CategoryType.FTS) {
@@ -91,7 +94,6 @@ const TrackerSearchProvider = new Lang.Class({
             query += "  tracker:available true .";
             query += "} ORDER BY DESC(nfo:fileLastModified(?urn)) DESC(nie:contentCreated(?urn)) ASC(nie:title(?urn)) OFFSET 0 LIMIT " + String(MAX_RESULTS);
         }
-
         return query;
     },
 
@@ -100,10 +102,10 @@ const TrackerSearchProvider = new Lang.Class({
         let type = res.contentType;
         let name = res.name;
         let path = res.path;
-        let filename = res.filename;
+        // let filename = res.filename;
         let lastMod = res.lastMod;
-        let contentType = res.contentType;
-        let prettyPath = res.prettyPath;
+        // let contentType = res.contentType;
+        // let prettyPath = res.prettyPath;
         return {
             'id':       resultId,
             'name':     name,
@@ -116,7 +118,12 @@ const TrackerSearchProvider = new Lang.Class({
         };
     },
 
-    getResultMetas: function(resultIds, callback) {
+    _onlyUnique : function (value, index, self) {
+        return self.indexOf(value) === index;
+    },
+
+    getResultMetas : function(resultIds, callback) {
+        global.log("GET METAS");
         let metas = [];
         for (let i = 0; i < resultIds.length; i++) {
             metas.push(this._getResultMeta(resultIds[i]));
@@ -130,12 +137,21 @@ const TrackerSearchProvider = new Lang.Class({
         var f = Gio.file_new_for_uri(uri);
         var fileName = f.get_path();
         Util.spawn([DEFAULT_EXEC, fileName]);
+        Main.overview.hide();
     },
 
-    _getResultSet: function (obj, result, callback) {
+    _getResultSet : function(obj, result, callback) {
+        // global.log("GET RESULT SET");
         let results = [];
-        var cursor = obj.query_finish(result);
-        
+        var cursor = null;
+        try{
+            cursor = obj.query_finish(result);
+            // global.log("QUERY FINISHED");
+        }
+        catch(e) {
+            global.log("ERROR: " + e);
+        }
+
         try {
             while (cursor != null && cursor.next(null)) {
                 var urn = cursor.get_string(0)[0];
@@ -151,6 +167,8 @@ const TrackerSearchProvider = new Lang.Class({
                 if(!f.query_exists(null)) {continue;}
 
                 var path = f.get_path();
+                global.log(path);
+                
                 // clean up path
                 var prettyPath = path.substr(0,path.length - filename.length).replace("/home/" + GLib.get_user_name() , "~");
                 // contentType is an array, the index "1" set true,
@@ -179,20 +197,25 @@ const TrackerSearchProvider = new Lang.Class({
                     'prettyPath' : prettyPath,
                     'contentType' : newContentType
                 });
-            };
+            }
         } catch (error) {
-            //global.log("TrackerSearchProvider: Could not traverse results cursor: " + error.message);
+            global.log("TrackerSearchProvider: Could not traverse results cursor: " + error.message);
         }
-        this.searchSystem.setResults(this, results);
+        obj.close();
+        callback(results);
     },
 
     _connection_ready : function(object, result, terms, filetype, callback) {
+        // global.log("CONN READY");
         try {
-            var conn = Tracker.SparqlConnection.get_finish(result);
+            // var conn = Tracker.SparqlConnection.new_finish(result);
+            var ontology_path = Gio.file_new_for_path('.cache/tracker3/files');
+            var conn = Tracker.SparqlConnection.new(Tracker.SparqlConnectionFlags.NONE, ontology_path, null, null); 
             var query = this._getQuery(terms, filetype);
+            // var cursor = conn.query_async(query, null, this._getResultSet.bind(conn, result, callback));
             var cursor = conn.query_async(query, null, Lang.bind(this, this._getResultSet, callback));
         } catch (error) {
-            global.log("Querying Tracker failed. Please make sure you have the --GObject Introspection-- package for Tracker installed.");
+            global.log("EXCEPTION 1: Querying Tracker failed. Please make sure you have the --GObject Introspection-- package for Tracker installed.");
             global.log(error.message);
         }
     },
@@ -200,7 +223,7 @@ const TrackerSearchProvider = new Lang.Class({
     getInitialResultSet : function(terms, callback, cancellable) {
         // terms holds array of search items
         // check if 1st search term is >2 letters else drop the request
-        if(terms.length ===1 && terms[0].length < 3) {
+        if(terms.length === 1 && terms[0].length < 3) {
             return [];
         }
 
@@ -223,9 +246,12 @@ const TrackerSearchProvider = new Lang.Class({
         }
 
         try {
-            Tracker.SparqlConnection.get_async(null, Lang.bind(this, this._connection_ready, terms, filetype, callback));
+            // Tracker.SparqlConnection.get_async(null, Lang.bind(this, this._connection_ready, terms, filetype, callback));
+            var ontology_path = Gio.file_new_for_path('.cache/tracker3/files');
+            Tracker.SparqlConnection.new_async(null, null, ontology_path, null, Lang.bind(this, this._connection_ready, terms, filetype, callback));
+            // global.log("INIT");
         } catch (error) {
-            global.log("Querying Tracker failed. Please make sure you have the --GObject Introspection-- package for Tracker installed.");
+            global.log("EXCEPTION 2: Querying Tracker failed. Please make sure you have the --GObject Introspection-- package for Tracker installed.");
             global.log(error.message);
         }
         return [];
@@ -244,17 +270,28 @@ const TrackerSearchProvider = new Lang.Class({
         return results.slice(0, max);
     },
 
-    launchSearch: function(terms) {
+    launchSearch : function(terms) {
         if(terms.length > 1) {            
             // tracker-needle doesn't support file types
             terms = terms[1];   
         }
         
-        let app = Gio.AppInfo.create_from_commandline("tracker-needle " + terms, null, Gio.AppInfoCreateFlags.SUPPORTS_STARTUP_NOTIFICATION);
+        let app = Gio.AppInfo.create_from_commandline("tracker3 search " + terms, null, Gio.AppInfoCreateFlags.SUPPORTS_STARTUP_NOTIFICATION);
         let context = global.create_app_launch_context(0, -1);
         app.launch([], context);
     }
 });
+
+function getMainOverviewViewSelector() {
+    if ( Main.overview._overview.controls !== undefined) {
+        // GS 40+
+        return Main.overview._overview.controls._searchController;
+    } else {
+        // GS 38-
+        return Main.overview.viewSelector;
+    }
+}
+
 
 function init() {
 //global.log("-------- fmi init: hier sollte die Tracker-Connection aufgebaut werden?");
@@ -263,14 +300,32 @@ function init() {
 function enable() {
     if (!trackerSearchProviderFiles) {
         trackerSearchProviderFiles = new TrackerSearchProvider("FILES", CategoryType.FTS);
-        Main.overview.addSearchProvider(trackerSearchProviderFiles);
+        
+        let _searchResults = getMainOverviewViewSelector()._searchResults
+
+        if (_searchResults._searchSystem) {
+            _searchResults._searchSystem.addProvider(trackerSearchProviderFiles);
+        } else {
+            _searchResults._registerProvider(trackerSearchProviderFiles);
+        }
+
+        // Main.overview.viewSelector._searchResults._registerProvider(trackerSearchProviderFiles);
     }
 }
 
 function disable() {
     if (trackerSearchProviderFiles){
-        Main.overview.removeSearchProvider(trackerSearchProviderFiles);
+        let _searchResults = getMainOverviewViewSelector()._searchResults
+        if (_searchResults._searchSystem) {
+            _searchResults._searchSystem._unregisterProvider(trackerSearchProviderFiles);
+        } else {
+            _searchResults._unregisterProvider(trackerSearchProviderFiles);
+        }
+
+        // provider._remminaMonitor.cancel();
         trackerSearchProviderFiles = null;
+        // Main.overview.viewSelector._searchResults._unregisterProvider(trackerSearchProviderFiles);
+        // trackerSearchProviderFiles = null;
     }
 }
 
