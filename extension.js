@@ -31,7 +31,7 @@ const Atk           = imports.gi.Atk;
 const Lang          = imports.lang;
 
 /* let xdg-open pick the appropriate program to open/execute the file */
-const DEFAULT_EXEC = 'open';
+const DEFAULT_EXEC = 'xdg-open';
 /* Limit search results, since number of displayed items is limited */
 const MAX_RESULTS = 10;
 const ICON_SIZE = 64;
@@ -53,7 +53,7 @@ const TrackerSearchProvider = new Lang.Class({
     _init : function(title, categoryType) {
         this._categoryType = categoryType;
         this._title = title;
-        this.id = 'tracker3 search ' + title;
+        this.id = 'tracker-search-' + title;
         // this.appInfo = {get_name : function() {return 'tracker3 --help';},
         //                 get_icon : function() {return Gio.icon_new_for_string("/usr/share/icons/gnome/256x256/actions/system-search.png");},
         //                 get_id : function() {return this.id;}
@@ -118,10 +118,6 @@ const TrackerSearchProvider = new Lang.Class({
         };
     },
 
-    _onlyUnique : function (value, index, self) {
-        return self.indexOf(value) === index;
-    },
-
     getResultMetas : function(resultIds, callback) {
         global.log("GET METAS");
         let metas = [];
@@ -167,7 +163,7 @@ const TrackerSearchProvider = new Lang.Class({
                 if(!f.query_exists(null)) {continue;}
 
                 var path = f.get_path();
-                global.log(path);
+                // global.log(path);
                 
                 // clean up path
                 var prettyPath = path.substr(0,path.length - filename.length).replace("/home/" + GLib.get_user_name() , "~");
@@ -201,7 +197,6 @@ const TrackerSearchProvider = new Lang.Class({
         } catch (error) {
             global.log("TrackerSearchProvider: Could not traverse results cursor: " + error.message);
         }
-        obj.close();
         callback(results);
     },
 
@@ -259,7 +254,7 @@ const TrackerSearchProvider = new Lang.Class({
 
     getSubsearchResultSet : function(previousResults, terms, callback, cancellable) {
         // check if 1st search term is >2 letters else drop the request
-        if(terms.length ===1 && terms[0].length < 3) {
+        if(terms.length === 1 && terms[0].length < 3) {
             return [];
         }
         this.getInitialResultSet(terms, callback, cancellable);
